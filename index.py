@@ -21,25 +21,25 @@ def save_uploaded_photo(photo_name: str, uploaded_file: UploadFile):
         photo_file.write(uploaded_file.file.read())
 
 async def perform_signup(user_data: UserCreate) -> MetaData:
-    user_exists = await User.exists(username=user_data.create_username)
+    user_exists = await User.exists(email=user_data.email)
     if user_exists:
-        return MetaData(code=400, message="Username already exists")    
+        return MetaData(code=400, message="Email already exists")
     try:
-        user = await User.create(username=user_data.create_username, password=user_data.create_password)
-        return MetaData(code=201, message="User created successfully")
+        user = await User.create(email=user_data.email, password=user_data.create_password)
+        return MetaData(code=201, message="User created successfully", email=user.email)
     except IntegrityError as e:
         return MetaData(code=400, message="Error creating user: IntegrityError")
     except Exception as e:
         return MetaData(code=500, message="Error creating user")
-    
+
 async def perform_signin(user_data: UserLogin) -> MetaData:
     try:
-        user = await User.get(username=user_data.username)
+        user = await User.get(email=user_data.email)
     except User.DoesNotExist:
         return MetaData(code=404, message="User not found")
     if user.password != user_data.password:
-        return MetaData(code=401, message="Invalid username or password")    
-    return MetaData(code=200, message="Login successful")
+        return MetaData(code=401, message="Invalid email or password")
+    return MetaData(code=200, message="Login successful", email=user.email)
 
 async def get_all_product() -> ProductResponse:
     all_product = await Product.all()
@@ -98,11 +98,13 @@ async def delete_product(name_or_id: str) -> ProductResponse:
 
 @app.post("/signup/")
 async def signup(create_user_data: UserCreate):
-    return await perform_signup(create_user_data)
+    response = await perform_signup(create_user_data)
+    return response
 
 @app.post("/signin/")
 async def signin(user_data: UserLogin):
-    return await perform_signin(user_data)
+    response = await perform_signin(user_data)
+    return response
 
 @app.get("/get_all_product/", response_model=ProductResponse)
 async def get_all_product_endpoint():

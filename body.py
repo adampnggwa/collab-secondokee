@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import List
-     
+from typing import Optional
+
 class ProductCreate(BaseModel):
     id: int
     name: str
@@ -12,6 +13,7 @@ class ProductCreate(BaseModel):
 class MetaData(BaseModel):
     code: int
     message: str
+    email: Optional[str] = None
 
 class ProductResponse(BaseModel):
     meta: MetaData
@@ -25,9 +27,9 @@ class ProductCreateRequest(BaseModel):
     size: str
 
 class UserLogin(BaseModel):
-    username: str
+    email: str
     password: str
 
 class UserCreate(BaseModel):
-    create_username: str
+    email: str
     create_password: str

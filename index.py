@@ -1,15 +1,50 @@
-from fastapi import FastAPI, Body, UploadFile, File
+from fastapi import FastAPI, Body, UploadFile, File, Request, HTTPException
+from fastapi.responses import JSONResponse, RedirectResponse
 from config import init_db
 from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest, UserCreate, UserLogin
 from model import Product, User
 from tortoise.exceptions import IntegrityError
 import os
+from google_oauth import (
+    google_authorization,
+    google_auth_callback,
+    google_oauth_cb,
+)
 
 app = FastAPI()
+
+scopes=['email', 'profile']
 
 @app.on_event("startup")
 async def startup_event():
     init_db(app)
+
+@app.get("/auth")
+async def auth(request: Request):
+    auth = await google_authorization(
+        scopes,
+        redirect_auth="https://8bc0-103-105-55-169.ngrok-free.app/auth2callback",
+        redirect_complete="https://8bc0-103-105-55-169.ngrok-free.app/auth",
+        request=request,
+    )
+    return RedirectResponse(auth)
+
+@app.get("/auth2callback")
+async def auth_callback(request: Request, state):
+    auth_call = await google_oauth_cb(
+        state=state,
+        redirect_uri="https://8bc0-103-105-55-169.ngrok-free.app/auth2callback",
+        scopes=scopes,
+        request=request,
+    )
+    return auth_call
+
+@app.get("/")
+async def root(request: Request):
+    credentials = request.query_params.get("credentials")
+    if not credentials:
+        raise HTTPException(status_code=400, detail="Credentials not found")
+    return JSONResponse({"credentials": credentials})
 
 def save_uploaded_photo(photo_name: str, uploaded_file: UploadFile):
     photo_dir = "C:\\adampkl\\test upload foto"

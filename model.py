@@ -16,7 +16,8 @@ class User(Model):
     id = fields.IntField(pk=True)
     email = fields.CharField(max_length=100, unique=True)
     password = fields.CharField(max_length=255) 
-    
+    access_token = fields.CharField(max_length=500, null=True)
+
     class Meta:
         table = "users"
         

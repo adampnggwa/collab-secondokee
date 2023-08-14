@@ -29,6 +29,7 @@ class ProductCreateRequest(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+    google_token: str
 
 class UserCreate(BaseModel):
     email: str

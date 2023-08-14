@@ -5,6 +5,7 @@ from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest,
 from model import Product, User
 from tortoise.exceptions import IntegrityError
 import os
+import requests
 from google_oauth import (
     google_authorization,
     google_auth_callback,
@@ -23,8 +24,8 @@ async def startup_event():
 async def auth(request: Request):
     auth = await google_authorization(
         scopes,
-        redirect_auth="https://8bc0-103-105-55-169.ngrok-free.app/auth2callback",
-        redirect_complete="https://8bc0-103-105-55-169.ngrok-free.app/auth",
+        redirect_auth="https://6dd8-125-163-198-35.ngrok-free.app/auth2callback",
+        redirect_complete="https://6dd8-125-163-198-35.ngrok-free.app/auth",
         request=request,
     )
     return RedirectResponse(auth)
@@ -33,7 +34,7 @@ async def auth(request: Request):
 async def auth_callback(request: Request, state):
     auth_call = await google_oauth_cb(
         state=state,
-        redirect_uri="https://8bc0-103-105-55-169.ngrok-free.app/auth2callback",
+        redirect_uri="https://6dd8-125-163-198-35.ngrok-free.app/auth2callback",
         scopes=scopes,
         request=request,
     )
@@ -45,6 +46,10 @@ async def root(request: Request):
     if not credentials:
         raise HTTPException(status_code=400, detail="Credentials not found")
     return JSONResponse({"credentials": credentials})
+
+def validate_google_token(token: str) -> dict:
+    response = requests.get(f"https://www.googleapis.com/oauth2/v3/tokeninfo?id_token={token}")
+    return response.json()
 
 def save_uploaded_photo(photo_name: str, uploaded_file: UploadFile):
     photo_dir = "C:\\adampkl\\test upload foto"
@@ -66,15 +71,21 @@ async def perform_signup(user_data: UserCreate) -> MetaData:
         return MetaData(code=400, message="Error creating user: IntegrityError")
     except Exception as e:
         return MetaData(code=500, message="Error creating user")
-
-async def perform_signin(user_data: UserLogin) -> MetaData:
+    
+async def perform_login(user_data: UserLogin) -> dict:
     try:
         user = await User.get(email=user_data.email)
     except User.DoesNotExist:
-        return MetaData(code=404, message="User not found")
+        return {"status": "error", "message": "User not found"}
     if user.password != user_data.password:
-        return MetaData(code=401, message="Invalid email or password")
-    return MetaData(code=200, message="Login successful", email=user.email)
+        return {"status": "error", "message": "Invalid email or password"}
+    google_token = user_data.google_token
+    google_token_info = validate_google_token(google_token)
+    if google_token_info.get("error"):
+        return {"status": "error", "message": "Google token validation failed"}
+    user.access_token = google_token
+    await user.save()
+    return {"message": "Login successful", "google_token": google_token}
 
 async def get_all_product() -> ProductResponse:
     all_product = await Product.all()
@@ -136,9 +147,9 @@ async def signup(create_user_data: UserCreate):
     response = await perform_signup(create_user_data)
     return response
 
-@app.post("/signin/")
-async def signin(user_data: UserLogin):
-    response = await perform_signin(user_data)
+@app.post("/login/")
+async def login(user_data: UserLogin):
+    response = await perform_login(user_data)
     return response
 
 @app.get("/get_all_product/", response_model=ProductResponse)

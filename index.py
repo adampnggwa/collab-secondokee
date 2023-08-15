@@ -1,51 +1,20 @@
 from fastapi import FastAPI, Body, UploadFile, File, Request, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
-from config import init_db
 from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest, UserCreate, UserLogin
-from model import Product, User
+from fastapi.responses import JSONResponse, RedirectResponse
 from tortoise.exceptions import IntegrityError
-import os
-import requests
+from model import Product, User
+from config import init_db
 from google_oauth import (
     google_authorization,
     google_auth_callback,
     google_oauth_cb,
 )
+import requests
+import os
 
 app = FastAPI()
 
 scopes=['email', 'profile']
-
-@app.on_event("startup")
-async def startup_event():
-    init_db(app)
-
-@app.get("/auth")
-async def auth(request: Request):
-    auth = await google_authorization(
-        scopes,
-        redirect_auth="https://6dd8-125-163-198-35.ngrok-free.app/auth2callback",
-        redirect_complete="https://6dd8-125-163-198-35.ngrok-free.app/auth",
-        request=request,
-    )
-    return RedirectResponse(auth)
-
-@app.get("/auth2callback")
-async def auth_callback(request: Request, state):
-    auth_call = await google_oauth_cb(
-        state=state,
-        redirect_uri="https://6dd8-125-163-198-35.ngrok-free.app/auth2callback",
-        scopes=scopes,
-        request=request,
-    )
-    return auth_call
-
-@app.get("/")
-async def root(request: Request):
-    credentials = request.query_params.get("credentials")
-    if not credentials:
-        raise HTTPException(status_code=400, detail="Credentials not found")
-    return JSONResponse({"credentials": credentials})
 
 def validate_google_token(token: str) -> dict:
     response = requests.get(f"https://www.googleapis.com/oauth2/v3/tokeninfo?id_token={token}")
@@ -141,6 +110,37 @@ async def delete_product(name_or_id: str) -> ProductResponse:
         return ProductResponse(meta=MetaData(code=404, message="Product not found"), response=[])
     await product.delete()
     return ProductResponse(meta=MetaData(code=204, message="successfully deleted Product"), response=[])
+
+@app.get("/auth")
+async def auth(request: Request):
+    auth = await google_authorization(
+        scopes,
+        redirect_auth="https://6dd8-125-163-198-35.ngrok-free.app/auth2callback",
+        redirect_complete="https://6dd8-125-163-198-35.ngrok-free.app/auth",
+        request=request,
+    )
+    return RedirectResponse(auth)
+
+@app.get("/auth2callback")
+async def auth_callback(request: Request, state):
+    auth_call = await google_oauth_cb(
+        state=state,
+        redirect_uri="https://6dd8-125-163-198-35.ngrok-free.app/auth2callback",
+        scopes=scopes,
+        request=request,
+    )
+    return auth_call
+
+@app.get("/")
+async def root(request: Request):
+    credentials = request.query_params.get("credentials")
+    if not credentials:
+        raise HTTPException(status_code=400, detail="Credentials not found")
+    return JSONResponse({"credentials": credentials})
+
+@app.on_event("startup")
+async def startup_event():
+    init_db(app)
 
 @app.post("/signup/")
 async def signup(create_user_data: UserCreate):

@@ -13,7 +13,6 @@ class ProductCreate(BaseModel):
 class MetaData(BaseModel):
     code: int
     message: str
-    email: Optional[str] = None
 
 class ProductResponse(BaseModel):
     meta: MetaData
@@ -25,6 +24,11 @@ class ProductCreateRequest(BaseModel):
     price: float
     type: str
     size: str
+
+class MetaDataWithEmail(BaseModel):
+    code: int
+    message: str
+    email: str
 
 class UserLogin(BaseModel):
     email: str

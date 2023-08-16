@@ -3,7 +3,6 @@ from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest,
 from fastapi.responses import JSONResponse, RedirectResponse
 from reaspon import success_response, error_response
 from tortoise.exceptions import IntegrityError
-from cryptography.fernet import Fernet
 from model import Product, User
 from config import init_db
 from google_oauth import (
@@ -19,10 +18,6 @@ import secrets
 app = FastAPI()
 
 scopes=['email', 'profile']
-
-# Inisialisasi kunci enkripsi
-encryption_key = Fernet.generate_key()
-cipher_suite = Fernet(encryption_key)
 
 def validate_google_token(token: str) -> dict:
     response = requests.get(f"https://www.googleapis.com/oauth2/v3/tokeninfo?id_token={token}")
@@ -59,16 +54,13 @@ async def perform_login(user_data: UserLogin) -> dict:
         user = await User.get(email=user_data.email)
     except User.DoesNotExist:
         return error_response(404, "User not found")
-    if user.password != user_data.password:
+    if user.email != user_data.email:
         return error_response(400, "Invalid email or password")
     google_token = user_data.google_token
     google_token_info = validate_google_token(google_token)
     if google_token_info.get("error"):
         return error_response(400, "Google token validation failed")
-
-    # Enkripsi token sebelum menyimpannya di basis data
-    encrypted_token = cipher_suite.encrypt(google_token.encode("utf-8"))
-    user.access_token = encrypted_token
+    user.access_token = google_token
     await user.save()
     return success_response(200, "Login successful")
 
@@ -131,8 +123,8 @@ async def delete_product(name_or_id: str) -> ProductResponse:
 async def auth(request: Request):
     auth = await google_authorization(
         scopes,
-        redirect_auth="https://1e0b-36-72-212-110.ngrok-free.app/auth2callback",
-        redirect_complete="https://1e0b-36-72-212-110.ngrok-free.app/auth",
+        redirect_auth="https://aeab-202-152-141-19.ngrok-free.app/auth2callback",
+        redirect_complete="https://aeab-202-152-141-19.ngrok-free.app/auth",
         request=request,
     )
     return RedirectResponse(auth)
@@ -141,7 +133,7 @@ async def auth(request: Request):
 async def auth_callback(request: Request, state):
     auth_call = await google_oauth_cb(
         state=state,
-        redirect_uri="https://1e0b-36-72-212-110.ngrok-free.app/auth2callback",
+        redirect_uri="https://aeab-202-152-141-19.ngrok-free.app/auth2callback",
         scopes=scopes,
         request=request,
     )

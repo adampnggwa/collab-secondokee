@@ -3,12 +3,12 @@ from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest
 from fastapi.responses import JSONResponse, RedirectResponse
 import google_auth_oauthlib.flow
 from model import Product, User 
-from config import init_db
+from database import init_db
 from helper import credentials_to_dict, user_response, pesan_response, create_token, check_token_expired
 import requests
 import os
 
-app = FastAPI()
+app = FastAPI(title="Second-Okee")
 
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
@@ -87,7 +87,7 @@ async def daftar():
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/register"
+    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/auth2callbackRegister"
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
@@ -95,12 +95,12 @@ async def daftar():
     return RedirectResponse(authorization_url)
 
 @app.get("/login")
-async def daftar():
+async def masuk():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/login"
+    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/auth2callbackLogin"
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'

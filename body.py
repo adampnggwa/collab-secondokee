@@ -24,17 +24,3 @@ class ProductCreateRequest(BaseModel):
     price: float
     type: str
     size: str
-
-class MetaDataWithEmail(BaseModel):
-    code: int
-    message: str
-    email: str
-
-class UserLogin(BaseModel):
-    email: str
-    password: str
-    google_token: str
-
-class UserCreate(BaseModel):
-    email: str
-    create_password: str

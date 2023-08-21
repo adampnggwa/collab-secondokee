@@ -1,27 +1,21 @@
-from fastapi import FastAPI, Body, UploadFile, File, Request, HTTPException
-from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest, UserCreate, UserLogin, MetaDataWithEmail
+from fastapi import FastAPI, Body, UploadFile, File, Request
+from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest
 from fastapi.responses import JSONResponse, RedirectResponse
-from reaspon import success_response, error_response
-from tortoise.exceptions import IntegrityError
-from model import Product, User
+import google_auth_oauthlib.flow
+from model import Product, User 
 from config import init_db
-from google_oauth import (
-    google_authorization,
-    google_auth_callback,
-    google_oauth_cb,
-)
+from helper import credentials_to_dict, user_response, pesan_response, create_token, check_token_expired
 import requests
 import os
-import hashlib
-import secrets
 
 app = FastAPI()
 
-scopes=['email', 'profile']
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 
-def validate_google_token(token: str) -> dict:
-    response = requests.get(f"https://www.googleapis.com/oauth2/v3/tokeninfo?id_token={token}")
-    return response.json()
+@app.on_event("startup")
+async def startup_event():
+    init_db(app)
 
 def save_uploaded_photo(photo_name: str, uploaded_file: UploadFile):
     photo_dir = "C:\\adampkl\\test upload foto"
@@ -32,48 +26,16 @@ def save_uploaded_photo(photo_name: str, uploaded_file: UploadFile):
     with open(photo_path, "wb") as photo_file:
         photo_file.write(uploaded_file.file.read())
 
-def hash_password(password: str, salt: str) -> str:
-    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
-
-async def perform_signup(user_data: UserCreate) -> dict:
-    try:
-        user_exists = await User.exists(email=user_data.email)
-        if user_exists:
-            return error_response(400, "Email already exists")
-        salt = secrets.token_hex(16)
-        hashed_password = hash_password(user_data.create_password, salt)
-        user = await User.create(email=user_data.email, password=hashed_password, salt=salt)
-        return success_response(201, "User created successfully")
-    except IntegrityError as e:
-        return error_response(400, "Error creating user: Email already exists")
-    except Exception as e:
-        return error_response(500, "Error creating user: Internal Server Error")
-
-async def perform_login(user_data: UserLogin) -> dict:
-    try:
-        user = await User.get(email=user_data.email)
-    except User.DoesNotExist:
-        return error_response(404, "User not found")
-    if user.email != user_data.email:
-        return error_response(400, "Invalid email or password")
-    google_token = user_data.google_token
-    google_token_info = validate_google_token(google_token)
-    if google_token_info.get("error"):
-        return error_response(400, "Google token validation failed")
-    user.access_token = google_token
-    await user.save()
-    return success_response(200, "Login successful")
+async def create_product(name: str, description: str, price: float, type: str, size: str) -> ProductResponse:
+    product = await Product.create(name=name, description=description, price=price, type=type, size=size)
+    data_response = ProductCreate(id=product.id, name=product.name, description=product.description, price=product.price, type=product.type, size=product.size)
+    return ProductResponse(meta=MetaData(code=201, message="successfully added product"), response=[data_response])
 
 async def get_all_product() -> ProductResponse:
     all_product = await Product.all()
     response_data = [ProductCreate(id=product.id, name=product.name, description=product.description, price=product.price, type=product.type, size=product.size) for product in all_product]
     return ProductResponse(meta=MetaData(code=200, message="successfully displayed all products"), response=response_data)
     
-async def create_product(name: str, description: str, price: float, type: str, size: str) -> ProductResponse:
-    product = await Product.create(name=name, description=description, price=price, type=type, size=size)
-    data_response = ProductCreate(id=product.id, name=product.name, description=product.description, price=product.price, type=product.type, size=product.size)
-    return ProductResponse(meta=MetaData(code=201, message="successfully added product"), response=[data_response])
-
 async def upload_product_photo(name_or_id: str, product_photo: UploadFile = File(...)) -> ProductResponse:
     by_id = name_or_id.isdigit()
     if by_id:
@@ -119,46 +81,88 @@ async def delete_product(name_or_id: str) -> ProductResponse:
     await product.delete()
     return ProductResponse(meta=MetaData(code=204, message="successfully deleted Product"), response=[])
 
-@app.get("/auth")
-async def auth(request: Request):
-    auth = await google_authorization(
-        scopes,
-        redirect_auth="https://aeab-202-152-141-19.ngrok-free.app/auth2callback",
-        redirect_complete="https://aeab-202-152-141-19.ngrok-free.app/auth",
-        request=request,
+@app.get("/register")
+async def daftar():
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=['email', 'profile']  
     )
-    return RedirectResponse(auth)
-
-@app.get("/auth2callback")
-async def auth_callback(request: Request, state):
-    auth_call = await google_oauth_cb(
-        state=state,
-        redirect_uri="https://aeab-202-152-141-19.ngrok-free.app/auth2callback",
-        scopes=scopes,
-        request=request,
+    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/register"
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
     )
-    return auth_call
+    return RedirectResponse(authorization_url)
 
-@app.get("/")
-async def root(request: Request):
-    credentials = request.query_params.get("credentials")
-    if not credentials:
-        raise HTTPException(status_code=400, detail="Credentials not found")
-    return JSONResponse({"credentials": credentials})
+@app.get("/login")
+async def daftar():
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=['email', 'profile']  
+    )
+    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/login"
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true'
+    )
+    return RedirectResponse(authorization_url)
 
-@app.on_event("startup")
-async def startup_event():
-    init_db(app)
+@app.get("/auth2callbackRegister")
+async def auth2callback_register(request: Request, state: str):
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=['email', 'profile'],  
+        state=state
+    )
+    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/auth2callbackRegister"
+    authorization_response = str(request.url)
+    flow.fetch_token(authorization_response=authorization_response)
+    credentials = flow.credentials
+    access_token = credentials.token
 
-@app.post("/signup/")
-async def signup(create_user_data: UserCreate):
-    response = await perform_signup(create_user_data)
-    return response
+    userinfo_endpoint = 'https://www.googleapis.com/oauth2/v3/userinfo'
+    user_info_response = requests.get(userinfo_endpoint, headers={'Authorization': f'Bearer {access_token}'})
+    user_info = user_info_response.json()
+    email = user_info.get("email")
+    nama = user_info.get("name")
 
-@app.post("/login/")
-async def login(user_data: UserLogin):
-    response = await perform_login(user_data)
-    return response
+    existing_user = await User.filter(email=email).first()
+    if not existing_user:
+        save = User(nama=nama, email=email, status=True)
+        await save.save()
+        user = await User.filter(email=email).first()
+        await create_token(user)
+        response = user_response(user)
+        return JSONResponse(response, status_code=201)
+    
+@app.get("/auth2callbackLogin")
+async def auth2callback(request: Request, state: str):
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=['email', 'profile'],  
+        state=state
+    )
+    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/auth2callbackLogin"
+    authorization_response = str(request.url)
+    flow.fetch_token(authorization_response=authorization_response)
+    credentials = flow.credentials
+    creds = credentials_to_dict(credentials)
+    access_token = credentials.token
+
+    userinfo_endpoint = 'https://www.googleapis.com/oauth2/v3/userinfo'
+    user_info_response = requests.get(userinfo_endpoint, headers={'Authorization': f'Bearer {access_token}'})
+    user_info = user_info_response.json()
+    email = user_info.get("email")
+
+    existing_user = await User.filter(email=email).first()
+    if not existing_user:
+        return  "User not found"
+    else:
+        user = await User.filter(email=email).first()
+        await create_token(user)
+        response =user_response(user)
+        return JSONResponse(response, status_code=200)
+
 
 @app.get("/get_all_product/", response_model=ProductResponse)
 async def get_all_product_endpoint():

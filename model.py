@@ -12,14 +12,18 @@ class Product(Model):
     class Meta:
         table = "products"
 
+    def __str__(self):
+        return self.id
+
 class User(Model):
-    id = fields.IntField(pk=True)
+    user_id = fields.IntField(pk=True)
     email = fields.CharField(max_length=100, unique=True)
-    password = fields.CharField(max_length=255) 
-    access_token = fields.CharField(max_length=500, null=True)
+    token = fields.CharField(max_length=500, null=True)
+    waktu_basi = fields.DatetimeField(null=True)
+    status = fields.BooleanField(default=False)
 
     class Meta:
         table = "users"
         
     def __str__(self):
-        return self.id
+        return self.user_id

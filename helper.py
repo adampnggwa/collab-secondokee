@@ -1,5 +1,3 @@
-import requests
-from pydantic import BaseModel
 import secrets
 import pytz
 from datetime import datetime, timedelta
@@ -25,12 +23,6 @@ def user_response(user):
         
     return response
 
-def pesan_response(email: str, pesan: str):
-    return {
-        'email':email,
-        'pesan':pesan
-    }
-
 async def create_token(user):
     token = secrets.token_hex(16)
     waktu_basi = datetime.now(pytz.utc) + timedelta(hours=8)
@@ -44,5 +36,4 @@ async def check_token_expired(user):
         user.token = None
         await user.save()
         return True
-    else:
-        return False
+    return False

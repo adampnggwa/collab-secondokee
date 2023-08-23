@@ -1,10 +1,10 @@
-from fastapi import FastAPI, Body, UploadFile, File, Request
+from fastapi import FastAPI, Body, UploadFile, File, Request, HTTPException, Depends, Query
 from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest
 from fastapi.responses import JSONResponse, RedirectResponse
 import google_auth_oauthlib.flow
 from model import Product, User 
 from database import init_db
-from helper import credentials_to_dict, user_response, pesan_response, create_token, check_token_expired
+from helper import credentials_to_dict, user_response, create_token, check_token_expired
 import requests
 import os
 
@@ -81,13 +81,21 @@ async def delete_product(name_or_id: str) -> ProductResponse:
     await product.delete()
     return ProductResponse(meta=MetaData(code=204, message="successfully deleted Product"), response=[])
 
+@app.get("/verify-token")
+async def verify_token(token: str = Query(...)):
+    user = await User.filter(token=token).first()
+    if user and not await check_token_expired(user):
+        return RedirectResponse("https://e1cf-36-72-212-202.ngrok-free.app/docs")
+    else:
+        return "error"
+
 @app.get("/register")
 async def daftar():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/auth2callbackRegister"
+    flow.redirect_uri = "https://e1cf-36-72-212-202.ngrok-free.app/auth2callbackRegister"
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
@@ -100,7 +108,7 @@ async def masuk():
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/auth2callbackLogin"
+    flow.redirect_uri = "https://e1cf-36-72-212-202.ngrok-free.app/auth2callbackLogin"
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
@@ -114,7 +122,7 @@ async def auth2callback_register(request: Request, state: str):
         scopes=['email', 'profile'],  
         state=state
     )
-    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/auth2callbackRegister"
+    flow.redirect_uri = "https://e1cf-36-72-212-202.ngrok-free.app/auth2callbackRegister"
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
@@ -134,6 +142,8 @@ async def auth2callback_register(request: Request, state: str):
         await create_token(user)
         response = user_response(user)
         return JSONResponse(response, status_code=201)
+    else:
+        return "error"
     
 @app.get("/auth2callbackLogin")
 async def auth2callback(request: Request, state: str):
@@ -142,7 +152,7 @@ async def auth2callback(request: Request, state: str):
         scopes=['email', 'profile'],  
         state=state
     )
-    flow.redirect_uri = "https://4945-36-72-213-135.ngrok-free.app/auth2callbackLogin"
+    flow.redirect_uri = "https://e1cf-36-72-212-202.ngrok-free.app/auth2callbackLogin"
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
@@ -156,14 +166,13 @@ async def auth2callback(request: Request, state: str):
 
     existing_user = await User.filter(email=email).first()
     if not existing_user:
-        return  "User not found"
+        return "error"
     else:
         user = await User.filter(email=email).first()
         await create_token(user)
-        response =user_response(user)
+        response = user_response(user)
         return JSONResponse(response, status_code=200)
-
-
+    
 @app.get("/get_all_product/", response_model=ProductResponse)
 async def get_all_product_endpoint():
     return await get_all_product()

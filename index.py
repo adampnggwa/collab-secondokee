@@ -1,12 +1,15 @@
 from fastapi import FastAPI, Body, UploadFile, File, Request, HTTPException, Depends, Query
-from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest
+from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest, UserSignin, UserSignup
 from fastapi.responses import JSONResponse, RedirectResponse
 import google_auth_oauthlib.flow
-from model import Product, User 
+from model import Product, User, UserData
 from database import init_db
 from helper import credentials_to_dict, user_response, create_token, check_token_expired
 import requests
+import hashlib
 import os
+import secrets
+from tortoise.exceptions import IntegrityError
 
 app = FastAPI(title="Second-Okee")
 
@@ -25,6 +28,38 @@ def save_uploaded_photo(photo_name: str, uploaded_file: UploadFile):
     photo_path = os.path.join(photo_dir, f"{photo_name}.{file_extension}")
     with open(photo_path, "wb") as photo_file:
         photo_file.write(uploaded_file.file.read())
+
+def hash_password(password: str, salt: str) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+
+async def perform_signup(user_data: UserSignup) -> dict:
+    try:
+        user_exists = await UserData.exists(email=user_data.email)
+        if user_exists:
+            return {"status": "error", "code": 400, "message": "Email already exists"}
+
+        salt = secrets.token_hex(16)
+        hashed_password = hash_password(user_data.create_password, salt)
+        user = await UserData.create(email=user_data.email, password=hashed_password + salt)
+
+        return {"status": "success", "code": 201, "message": "User created successfully"}
+    except IntegrityError as e:
+        return {"status": "error", "code": 400, "message": "Error creating user: Email already exists"}
+    except Exception as e:
+        return {"status": "error", "code": 500, "message": "Error creating user: Internal Server Error"}
+
+async def perform_login(user_data: UserSignin) -> dict:
+    try:
+        user = await UserData.get(email=user_data.email)
+    except UserData.DoesNotExist:
+        return {"status": "error", "code": 404, "message": "User not found"}
+
+    salt = user.password[-32:]  # Extract salt from the hashed password
+    hashed_input_password = hash_password(user_data.password, salt)
+    if user.password[:-32] != hashed_input_password:
+        return {"status": "error", "code": 400, "message": "Invalid email or password"}
+
+    return {"status": "success", "code": 200, "message": "Login successful"}
 
 async def create_product(name: str, description: str, price: float, type: str, size: str) -> ProductResponse:
     product = await Product.create(name=name, description=description, price=price, type=type, size=size)
@@ -81,34 +116,50 @@ async def delete_product(name_or_id: str) -> ProductResponse:
     await product.delete()
     return ProductResponse(meta=MetaData(code=204, message="successfully deleted Product"), response=[])
 
+@app.post("/signup/")
+async def signup(create_user_data: UserSignup):
+    response = await perform_signup(create_user_data)
+    return response
+
+@app.post("/signin/")
+async def signin(user_data: UserSignin):
+    response = await perform_login(user_data)
+    return response
+
 @app.get("/verify-token")
 async def verify_token(token: str = Query(...)):
     user = await User.filter(token=token).first()
-    if user and not await check_token_expired(user):
-        return RedirectResponse("https://e1cf-36-72-212-202.ngrok-free.app/docs")
+    if user:
+        if await check_token_expired(user):
+            # Token expired, redirect to login
+            return RedirectResponse("https://f5b2-202-152-141-19.ngrok-free.app/login")
+        else:
+            # Token valid, redirect to docs
+            return RedirectResponse("https://f5b2-202-152-141-19.ngrok-free.app/docs")
     else:
-        return "error"
+        # Invalid token, return an error response
+        raise HTTPException(status_code=400, detail="Invalid token")
 
-@app.get("/register")
+@app.get("/register_google")
 async def daftar():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = "https://e1cf-36-72-212-202.ngrok-free.app/auth2callbackRegister"
+    flow.redirect_uri = "https://f5b2-202-152-141-19.ngrok-free.app/auth2callbackRegister"
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
     )
     return RedirectResponse(authorization_url)
 
-@app.get("/login")
+@app.get("/login_google")
 async def masuk():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = "https://e1cf-36-72-212-202.ngrok-free.app/auth2callbackLogin"
+    flow.redirect_uri = "https://f5b2-202-152-141-19.ngrok-free.app/auth2callbackLogin"
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
@@ -122,7 +173,7 @@ async def auth2callback_register(request: Request, state: str):
         scopes=['email', 'profile'],  
         state=state
     )
-    flow.redirect_uri = "https://e1cf-36-72-212-202.ngrok-free.app/auth2callbackRegister"
+    flow.redirect_uri = "https://f5b2-202-152-141-19.ngrok-free.app/auth2callbackRegister"
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
@@ -143,7 +194,7 @@ async def auth2callback_register(request: Request, state: str):
         response = user_response(user)
         return JSONResponse(response, status_code=201)
     else:
-        return "error"
+        raise HTTPException(status_code=400, detail="Invalid")
     
 @app.get("/auth2callbackLogin")
 async def auth2callback(request: Request, state: str):
@@ -152,7 +203,7 @@ async def auth2callback(request: Request, state: str):
         scopes=['email', 'profile'],  
         state=state
     )
-    flow.redirect_uri = "https://e1cf-36-72-212-202.ngrok-free.app/auth2callbackLogin"
+    flow.redirect_uri = "https://f5b2-202-152-141-19.ngrok-free.app/auth2callbackLogin"
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
@@ -166,7 +217,7 @@ async def auth2callback(request: Request, state: str):
 
     existing_user = await User.filter(email=email).first()
     if not existing_user:
-        return "error"
+        raise HTTPException(status_code=400, detail="Invalid")
     else:
         user = await User.filter(email=email).first()
         await create_token(user)

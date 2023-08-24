@@ -23,3 +23,11 @@ class ProductCreateRequest(BaseModel):
     price: float
     type: str
     size: str
+
+class UserSignup(BaseModel):
+    email: str
+    create_password: str
+
+class UserSignin(BaseModel):
+    email: str
+    password: str

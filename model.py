@@ -27,3 +27,14 @@ class User(Model):
         
     def __str__(self):
         return self.user_id
+    
+class UserData(Model):
+    id_user = fields.IntField(pk=True)
+    email = fields.CharField(max_length=100)
+    password = fields.CharField(max_length=564)
+
+    class Meta:
+        table = "user_data"
+
+    def __str__(self):
+        return self.id_user

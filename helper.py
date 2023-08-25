@@ -19,8 +19,7 @@ def user_response(user):
         "token": str(user.token),
         "waktu_basi": str(user.waktu_basi),
         "status": user.status
-    }
-        
+    }        
     return response
 
 async def create_token(user):

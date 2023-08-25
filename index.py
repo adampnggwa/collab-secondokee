@@ -1,15 +1,15 @@
-from fastapi import FastAPI, Body, UploadFile, File, Request, HTTPException, Depends, Query
+from fastapi import FastAPI, Body, UploadFile, File, Request, HTTPException, Query
 from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest, UserSignin, UserSignup
-from fastapi.responses import JSONResponse, RedirectResponse
-import google_auth_oauthlib.flow
-from model import Product, User, UserData
-from database import init_db
 from helper import credentials_to_dict, user_response, create_token, check_token_expired
+from fastapi.responses import JSONResponse, RedirectResponse
+from tortoise.exceptions import IntegrityError
+from model import Product, User, UserData
+import google_auth_oauthlib.flow
+from database import init_db
 import requests
+import secrets
 import hashlib
 import os
-import secrets
-from tortoise.exceptions import IntegrityError
 
 app = FastAPI(title="Second-Okee")
 
@@ -37,11 +37,9 @@ async def perform_signup(user_data: UserSignup) -> dict:
         user_exists = await UserData.exists(email=user_data.email)
         if user_exists:
             return {"status": "error", "code": 400, "message": "Email already exists"}
-
         salt = secrets.token_hex(16)
         hashed_password = hash_password(user_data.create_password, salt)
         user = await UserData.create(email=user_data.email, password=hashed_password + salt)
-
         return {"status": "success", "code": 201, "message": "User created successfully"}
     except IntegrityError as e:
         return {"status": "error", "code": 400, "message": "Error creating user: Email already exists"}
@@ -53,12 +51,10 @@ async def perform_login(user_data: UserSignin) -> dict:
         user = await UserData.get(email=user_data.email)
     except UserData.DoesNotExist:
         return {"status": "error", "code": 404, "message": "User not found"}
-
-    salt = user.password[-32:]  # Extract salt from the hashed password
+    salt = user.password[-32:]
     hashed_input_password = hash_password(user_data.password, salt)
     if user.password[:-32] != hashed_input_password:
         return {"status": "error", "code": 400, "message": "Invalid email or password"}
-
     return {"status": "success", "code": 200, "message": "Login successful"}
 
 async def create_product(name: str, description: str, price: float, type: str, size: str) -> ProductResponse:
@@ -131,13 +127,10 @@ async def verify_token(token: str = Query(...)):
     user = await User.filter(token=token).first()
     if user:
         if await check_token_expired(user):
-            # Token expired, redirect to login
             return RedirectResponse("https://f5b2-202-152-141-19.ngrok-free.app/login")
         else:
-            # Token valid, redirect to docs
             return RedirectResponse("https://f5b2-202-152-141-19.ngrok-free.app/docs")
     else:
-        # Invalid token, return an error response
         raise HTTPException(status_code=400, detail="Invalid token")
 
 @app.get("/register_google")

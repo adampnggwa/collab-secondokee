@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Body, UploadFile, File, Request, HTTPException, Query
-from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest, UserSignin, UserSignup
+from body import ProductCreate, ProductResponse, MetaData, ProductCreateRequest, UserSignin, UserSignup, Cart, CartItemsResponse, CartResponse
 from helper import credentials_to_dict, user_response, create_token, check_token_expired
 from fastapi.responses import JSONResponse, RedirectResponse
+from model import Product, User, CartItem
 from tortoise.exceptions import IntegrityError
-from model import Product, User, UserData
 import google_auth_oauthlib.flow
 from database import init_db
+from typing import List
 import requests
 import secrets
 import hashlib
@@ -34,28 +35,36 @@ def hash_password(password: str, salt: str) -> str:
 
 async def perform_signup(user_data: UserSignup) -> dict:
     try:
-        user_exists = await UserData.exists(email=user_data.email)
+        user_exists = await User.exists(email=user_data.email)
         if user_exists:
             return {"status": "error", "code": 400, "message": "Email already exists"}
         salt = secrets.token_hex(16)
         hashed_password = hash_password(user_data.create_password, salt)
-        user = await UserData.create(email=user_data.email, password=hashed_password + salt)
+        await User.create(email=user_data.email, password=hashed_password + salt)
         return {"status": "success", "code": 201, "message": "User created successfully"}
     except IntegrityError as e:
         return {"status": "error", "code": 400, "message": "Error creating user: Email already exists"}
     except Exception as e:
         return {"status": "error", "code": 500, "message": "Error creating user: Internal Server Error"}
 
-async def perform_login(user_data: UserSignin) -> dict:
+async def perform_signin(user_data: UserSignin) -> dict:
     try:
-        user = await UserData.get(email=user_data.email)
-    except UserData.DoesNotExist:
+        user = await User.get(email=user_data.email)
+    except User.DoesNotExist:
         return {"status": "error", "code": 404, "message": "User not found"}
     salt = user.password[-32:]
     hashed_input_password = hash_password(user_data.password, salt)
     if user.password[:-32] != hashed_input_password:
         return {"status": "error", "code": 400, "message": "Invalid email or password"}
-    return {"status": "success", "code": 200, "message": "Login successful"}
+    await create_token(user)   
+    return {
+        "status": "success",
+        "code": 200,
+        "message": "login successfully",
+        "user_id": user.user_id,
+        "token": user.token,
+        "waktu_basi": user.waktu_basi
+    }
 
 async def create_product(name: str, brand: str, description: str, price: float, type: str, size: str, stock: int) -> ProductResponse:
     product = await Product.create(name=name, brand=brand, description=description, price=price, type=type, size=size, stock=stock)
@@ -67,10 +76,13 @@ async def get_all_product() -> ProductResponse:
     response_data = [ProductCreate(id=product.id, name=product.name, brand=product.brand, description=product.description, price=product.price, type=product.type, size=product.size, stock=product.stock) for product in all_product]
     return ProductResponse(meta=MetaData(code=200, message="successfully displayed all products"), response=response_data)
     
-async def search_products(name: str = None, min_price: float = None, max_price: float = None, product_type: str = None):
+async def search_products(name_or_id: str = None, min_price: float = None, max_price: float = None, product_type: str = None):
     filters = {}
-    if name:
-        filters['name__icontains'] = name
+    if name_or_id:
+        if name_or_id.isdigit():
+            filters['id'] = int(name_or_id)
+        else:
+            filters['name__icontains'] = name_or_id
     if min_price is not None:
         filters['price__gte'] = min_price
     if max_price is not None:
@@ -105,7 +117,7 @@ async def upload_product_photo(name_or_id: str, product_photo: UploadFile = File
         return ProductResponse(meta=MetaData(code=404, message="Product not found"), response=[])
     photo_name = f"{product.name}_{product.id}"
     save_uploaded_photo(photo_name, product_photo)    
-    return ProductResponse(meta=MetaData(code=200, message="Product photo uploaded successfully"), response=[])
+    return ProductResponse(meta=MetaData(code=201, message="Product photo uploaded successfully"), response=[])
 
 async def update_product(name_or_id: str, new_name: str = None, new_brand: str = None, new_description: str = None, new_price: float = None, new_type: str = None, new_size: str = None, new_stock: int = None) -> ProductResponse:
     by_id = name_or_id.isdigit()
@@ -144,6 +156,60 @@ async def delete_product(name_or_id: str) -> ProductResponse:
     await product.delete()
     return ProductResponse(meta=MetaData(code=204, message="successfully deleted Product"), response=[])
 
+async def add_to_cart(email_or_id: str, product_id: int, quantity: int) -> CartResponse:
+    user = None
+    if email_or_id.isdigit():
+        user = await User.get_or_none(user_id=int(email_or_id))
+    else:
+        user = await User.get_or_none(email=email_or_id)
+    if user is None:
+        return CartResponse(meta=MetaData(code=404, message="error"), response="User not found")
+    product = await Product.get_or_none(id=product_id)
+    if product is None:
+        return CartResponse(meta=MetaData(code=404, message="error"), response="Product not found")
+    cart_item, created = await CartItem.get_or_create(user=user, product=product, defaults={"quantity": quantity})
+    if not created:
+        cart_item.quantity += quantity
+        await cart_item.save()   
+    return CartResponse(meta=MetaData(code=201, message="added"), response="Item added to cart successfully")
+
+async def get_cart_items(email_or_id: str) -> CartItemsResponse:
+    user = None
+    if email_or_id.isdigit():
+        user = await User.get_or_none(user_id=int(email_or_id))
+    else:
+        user = await User.get_or_none(email=email_or_id)
+    if user is None:
+        return CartItemsResponse(meta=MetaData(code=404, message="User not found"), response=[])
+    cart_items = await CartItem.filter(user=user).prefetch_related('product')
+    if not cart_items:
+        return CartItemsResponse(meta=MetaData(code=404, message="No items found in the cart"), response=[])
+    cart_responses = []
+    total_price = 0
+    for cart_item in cart_items:
+        product = cart_item.product
+        total_price += product.price * cart_item.quantity
+        cart_responses.append(Cart(
+            name=product.name,
+            quantity=cart_item.quantity,
+            total_price=float(product.price * cart_item.quantity)
+        ))
+    return CartItemsResponse(meta=MetaData(code=200, message="Cart items retrieved successfully"), response=cart_responses)
+
+async def remove_cart(email_or_id: str) -> CartResponse:
+    user = None
+    if email_or_id.isdigit():
+        user = await User.get_or_none(user_id=int(email_or_id))
+    else:
+        user = await User.get_or_none(email=email_or_id)
+    if user is None:
+        return CartResponse(meta=MetaData(code=404, message="error"), response="User not found")
+    cart_items = await CartItem.filter(user=user)
+    if not cart_items:
+        return CartResponse(meta=MetaData(code=404, message="error"), response="No items found in the cart")    
+    await CartItem.filter(user=user).delete()
+    return CartResponse(meta=MetaData(code=204, message="removed"), response="Cart items for the user removed successfully")
+
 @app.post("/signup/")
 async def signup(create_user_data: UserSignup):
     response = await perform_signup(create_user_data)
@@ -151,7 +217,7 @@ async def signup(create_user_data: UserSignup):
 
 @app.post("/signin/")
 async def signin(user_data: UserSignin):
-    response = await perform_login(user_data)
+    response = await perform_signin(user_data)
     return response
 
 @app.get("/verify-token")
@@ -166,7 +232,7 @@ async def verify_token(token: str = Query(...)):
         raise HTTPException(status_code=400, detail="Invalid token")
 
 @app.get("/register_google")
-async def daftar():
+async def regist():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
@@ -179,7 +245,7 @@ async def daftar():
     return RedirectResponse(authorization_url)
 
 @app.get("/login_google")
-async def masuk():
+async def login():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
@@ -258,8 +324,8 @@ async def get_all_product_endpoint():
     return await get_all_product()
 
 @app.get("/search_products/", response_model=ProductResponse)
-async def search_products_endpoint(name: str = None, min_price: float = None, max_price: float = None, product_type: str = None):
-    return await search_products(name, min_price, max_price, product_type)
+async def search_products_endpoint(name_or_id: str = None, min_price: float = None, max_price: float = None, product_type: str = None):
+    return await search_products(name_or_id, min_price, max_price, product_type)
 
 @app.post("/upload_product_photo/{name_or_id}/", response_model=ProductResponse)
 async def upload_product_photo_endpoint(name_or_id: str, product_photo: UploadFile = File(...)):
@@ -272,3 +338,15 @@ async def update_product_endpoint(name_or_id: str, new_name: str = None, new_bra
 @app.delete("/delete_product/", response_model=ProductResponse)
 async def delete_product_endpoint(name_or_id: str):
     return await delete_product(name_or_id)
+
+@app.post("/add_to_cart/", response_model=CartResponse)
+async def add_to_cart_endpoint(email_or_id: str, product_id: int, quantity: int):
+    return await add_to_cart(email_or_id, product_id, quantity)
+
+@app.get("/get_cart_items/", response_model=CartItemsResponse)
+async def get_cart_items_endpoint(email_or_id: str):
+    return await get_cart_items(email_or_id)
+
+@app.delete("/remove_cart/", response_model=CartResponse)
+async def remove_cart_endpoint(email_or_id: str):
+    return await remove_cart(email_or_id)

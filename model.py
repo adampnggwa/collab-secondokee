@@ -23,6 +23,7 @@ class User(Model):
     token = fields.CharField(max_length=500, null=True)
     waktu_basi = fields.DatetimeField(null=True)
     status = fields.BooleanField(default=False)
+    password = fields.CharField(max_length=564)
 
     class Meta:
         table = "users"
@@ -30,13 +31,14 @@ class User(Model):
     def __str__(self):
         return self.user_id
     
-class UserData(Model):
-    id_user = fields.IntField(pk=True)
-    email = fields.CharField(max_length=100)
-    password = fields.CharField(max_length=564)
+class CartItem(Model):
+    id_cart = fields.IntField(pk=True)
+    product = fields.ForeignKeyField('models.Product', related_name='cart_items')
+    user = fields.ForeignKeyField('models.User', related_name='cart_items')
+    quantity = fields.IntField()
 
     class Meta:
-        table = "user_data"
-
+        table = "cart_items"
+        
     def __str__(self):
-        return self.id_user
+        return self.id_cart

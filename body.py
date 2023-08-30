@@ -35,3 +35,16 @@ class UserSignup(BaseModel):
 class UserSignin(BaseModel):
     email: str
     password: str
+
+class Cart(BaseModel):
+    name: str
+    quantity: int
+    total_price: float
+
+class CartItemsResponse(BaseModel):
+    meta: MetaData
+    response: List[Cart]
+
+class CartResponse(BaseModel):
+    meta: MetaData
+    response: str

@@ -22,8 +22,7 @@ class User(Model):
     email = fields.CharField(max_length=100, unique=True)
     token = fields.CharField(max_length=500, null=True)
     waktu_basi = fields.DatetimeField(null=True)
-    status = fields.BooleanField(default=False)
-    password = fields.CharField(max_length=564)
+    password = fields.CharField(max_length=564,null=True)
 
     class Meta:
         table = "users"

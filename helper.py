@@ -17,8 +17,7 @@ def user_response(user):
         "user_id": str(user.user_id),
         "email": user.email,
         "token": str(user.token),
-        "waktu_basi": str(user.waktu_basi),
-        "status": user.status
+        "waktu_basi": str(user.waktu_basi)
     }        
     return response
 

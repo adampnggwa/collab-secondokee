@@ -17,6 +17,11 @@ app = FastAPI(title="Second-Okee")
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
 
+redirect_uri_register = "https://09d8-182-253-183-12.ngrok-free.app/auth2callbackRegister"
+redirect_uri_login = "https://09d8-182-253-183-12.ngrok-free.app/auth2callbackLogin"
+halaman_login = "https://09d8-182-253-183-12.ngrok-free.app/login"
+halaman_utama = "https://09d8-182-253-183-12.ngrok-free.app/docs"
+
 @app.on_event("startup")
 async def startup_event():
     init_db(app)
@@ -225,32 +230,32 @@ async def verify_token(token: str = Query(...)):
     user = await User.filter(token=token).first()
     if user:
         if await check_token_expired(user):
-            return RedirectResponse("https://f5b2-202-152-141-19.ngrok-free.app/login")
+            return RedirectResponse(halaman_login)
         else:
-            return RedirectResponse("https://f5b2-202-152-141-19.ngrok-free.app/docs")
+            return RedirectResponse (halaman_utama)
     else:
         raise HTTPException(status_code=400, detail="Invalid token")
 
-@app.get("/register_google")
+@app.get("/register")
 async def regist():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = "https://f5b2-202-152-141-19.ngrok-free.app/auth2callbackRegister"
+    flow.redirect_uri = redirect_uri_register
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
     )
     return RedirectResponse(authorization_url)
 
-@app.get("/login_google")
+@app.get("/login")
 async def login():
     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
         'client_secret.json',
         scopes=['email', 'profile']  
     )
-    flow.redirect_uri = "https://f5b2-202-152-141-19.ngrok-free.app/auth2callbackLogin"
+    flow.redirect_uri = redirect_uri_login
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
@@ -264,7 +269,7 @@ async def auth2callback_register(request: Request, state: str):
         scopes=['email', 'profile'],  
         state=state
     )
-    flow.redirect_uri = "https://f5b2-202-152-141-19.ngrok-free.app/auth2callbackRegister"
+    flow.redirect_uri = redirect_uri_register
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
@@ -278,7 +283,7 @@ async def auth2callback_register(request: Request, state: str):
 
     existing_user = await User.filter(email=email).first()
     if not existing_user:
-        save = User(nama=nama, email=email, status=True)
+        save = User(nama=nama, email=email)
         await save.save()
         user = await User.filter(email=email).first()
         await create_token(user)
@@ -294,7 +299,7 @@ async def auth2callback(request: Request, state: str):
         scopes=['email', 'profile'],  
         state=state
     )
-    flow.redirect_uri = "https://f5b2-202-152-141-19.ngrok-free.app/auth2callbackLogin"
+    flow.redirect_uri = redirect_uri_login
     authorization_response = str(request.url)
     flow.fetch_token(authorization_response=authorization_response)
     credentials = flow.credentials
